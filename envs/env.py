@@ -19,6 +19,23 @@ from torchrl.envs import (
 from torchrl.envs.transforms.transforms import _apply_to_composite
 from torchrl.envs.utils import check_env_specs, step_mdp
 
+from utils import GREEN, RESET
+
+MIN_CANDIDATES = 5
+MAX_CANDIDATES = 100
+MIN_VOTERS = 7
+MAX_VOTERS = 1_000
+
+
+@tensorclass
+class problem:
+    X: torch.Tensor # (B, MAX_CANDIDATES)
+    V: torch.Tensor # (B, MAX_VOTERS, MAX_CANDIDATES)
+    costs: torch.Tensor # (B, MAX_CANDIDATES)
+    k: torch.Tensor # (B, 1)
+    embed: torch.Tensor = None # (B, embed_dim)
+
+
 def kendall_tau_distance_from_vectors(p1: torch.Tensor, p2: torch.Tensor, exclude: torch.Tensor) -> torch.Tensor:
     """
     Computes the Kendall Tau distance (number of discordant pairs) between two permutation vectors,
@@ -113,7 +130,7 @@ class PolyTimeOracle(EnvBase):
         self.running_time = None
         
         
-    def _reset(self, problem: torch.Tensor) -> TensorDict:
+    def _reset(self, tensordict: TensorDictBase, **kwargs) -> TensorDictBase:
         
         self.halted_envs = torch.zeros(self.batch_size, dtype=torch.bool).to(self.device)
         
@@ -122,20 +139,24 @@ class PolyTimeOracle(EnvBase):
         self.running_time = torch.zeros(self.batch_size).to(self.device)
         
         self.state = torch.zeros(self.batch_size[0], self.tape_size).to(self.device)
-        self.problem = problem.to(self.device)
+        
+        #problem generation
+        self.problem = self.generate_problems()
         
         return TensorDict(
-            tape=self.state
+            observation=self.state,
+            problem=self.problem,
+            device=self.device,
+            batch_size=self.batch_size
         )
 
-    def _step(self, action: TensorDict) -> TensorDict:
-        self.state = torch.where(action["w"] @ self.state + action["b"], self.state)
+    def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
+        self.state = torch.where((~self.halted_envs).unsqueeze(-1), torch.bmm(tensordict['w'], self.state.unsqueeze(-1)).squeeze(-1) + tensordict['b'], self.state)
         
         halt_flag = self.state[..., -1]
         
         self.halted_envs = self.halted_envs | (halt_flag > self.epsilon).to(self.device)
 
-        
         candidate_flags = self.state[..., -self.problem["n_candidates"]-1:-1]
         
         kd = kendall_tau_distance_from_vectors(self.problem["V"], self.problem["X"], c_flags)
@@ -165,12 +186,20 @@ class PolyTimeOracle(EnvBase):
         pass
     
     def _set_seed(self, seed: Optional[int] = None) -> None:
-        pass
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        torch.backends.cudnn.deterministic = args.torch_deterministic
     
     def _render(self, mode: str = "manim") -> None:
         pass
     
+    def generate_problems(self) -> TensorDictBase:
+        n_candidates = torch.randint(MIN_CANDIDATES, MAX_CANDIDATES, (self.batch_size[0], )).to(self.device)
+        n_voters = torch.randint(MIN_VOTERS, MAX_VOTERS, (self.batch_size[0], )).to(self.device)
+        
+                
+        
     
 if __name__ == "__main__":
-    pt = PolyTimeOracle(batch_size=(1, ))
-    pt.reset()
+    pass

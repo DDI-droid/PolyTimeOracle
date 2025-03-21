@@ -27,7 +27,7 @@ RESET = "\033[0m"
 #         return WrappedTDModule
 #     return wrapper
 
-def to_perm_mat_1(rankings: torch.Tensor):
+def to_perm_mat_1(rankings: torch.Tensor) -> torch.Tensor:
     """Converts a batched ranking to a batched permutation matrix."""
     
     if len(rankings.shape) not in  (2, 3):
@@ -41,7 +41,7 @@ def to_perm_mat_1(rankings: torch.Tensor):
     
     return perm_matrices
 
-def to_perm_mat_2(rankings: torch.Tensor, pad_value: int = -1):
+def to_perm_mat_2(rankings: torch.Tensor, pad_value: int = -1) -> torch.Tensor:
     """
     Converts a batched ranking to a batched permutation matrix, handling end-padding.
     
@@ -60,6 +60,8 @@ def to_perm_mat_2(rankings: torch.Tensor, pad_value: int = -1):
     """
     if len(rankings.shape) not in (2, 3):
         raise ValueError(f"Expected a 2D or 3D tensor, got {rankings.shape}")
+    
+    rankings -= 1
     
     n = rankings.shape[-1]
     

@@ -10,6 +10,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 import tyro
 import wandb
+from torchrl.envs import EnvBase
+from torchrl.data import TensorDictReplayBuffer, LazyTensorStorage, PrioritizedSampler
 
 @dataclass
 class Args:
@@ -21,17 +23,17 @@ class Args:
     
     cuda: bool = True
     
-    track: bool = False
-    wandb_project_name: str = "cleanRL"
-    wandb_entity: str = None
+    track: bool = True
+    wandb_project_name: str = "PolyTimeOracle"
+    wandb_entity: str = "deepdecisionintelligence-ddi"
     capture_video: bool = False
     save_model: bool = False
 
     # Algorithm specific arguments
-    total_timesteps: int = 1000000
+    total_episodes: int = 10_000
     """total timesteps of the experiments"""
     α: float = 3e-4
-    num_envs: int = 1
+    num_envs: int = None
     """the number of parallel game environments"""
     
     buffer_size: int = int(1e6)
@@ -47,5 +49,77 @@ class Args:
     """the frequency of training policy (delayed)"""
     noise_clip: float = 0.5
     """noise clip parameter of the Target Policy Smoothing Regularization"""
+    alpha_prioritized_replay: float = 0.6
+    beta_prioritized_replay: float = 0.4
+    epsilon_prioritized_replay: float = 1e-6
+    
+    max_f_halted_envs_init: float = 0.7
+    """maximum initial fraction of halted environments"""
+    max_f_halted_envs_final: float = 0.3
+    """maximum final fraction of halted environments"""
     
     
+    
+    
+    
+class TD3:
+    def __init__(self) -> None:
+        self.args = tyro.cli(Args)
+        
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+    def __call__(self, π: nn.Module, π_t: nn.Module, qf1: nn.Module, qf2: nn.Module, qf1_t: nn.Module, qf2_t: nn.Module, env: EnvBase):
+        run_name = f"{self.args.exp_name}_{self.args.seed}_{int(time.time())}"
+        
+        if self.args.track:
+            wandb.init(
+                project=self.args.wandb_project_name,
+                entity=self.args.wandb_entity,
+                sync_tensorboard=False,
+                config=vars(args),
+                name=run_name,
+                save_code=False,
+            )
+        
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        torch.backends.cudnn.deterministic = args.torch_deterministic
+        
+        π_t.load_state_dict(π.state_dict())
+        qf1_t.load_state_dict(qf1.state_dict())
+        qf2.load_state_dict(qf2.state_dict())
+        
+        q_opt = optim.Adam(list(qf1.parameters()) + list(qf2.parameters()), lr=self.args.α)
+        π_opt = optim.Adam(list(actor.parameters()), lr=self.args.α)
+        
+        rb = TensorDictReplayBuffer(
+            priority_key="priority",
+            storage=LazyTensorStorage(self.args.buffer_size, device=self.device),
+            sampler=PrioritizedSampler(max_capacity=self.args.buffer_size, alpha=self.args.alpha_prioritized_replay, beta=self.args.beta_prioritized_replay, eps=self.args.epsilon_prioritized_replay, max_priority_within_buffer=True)
+        )
+        
+        start_time = time.time()
+        
+        t_dict = env.reset()
+        env.set_seed(self.args.seed)
+        
+        for episode in range(self.args.total_episodes):
+            max_f_halted_envs = self.args.max_f_halted_envs_init + (self.args.max_f_halted_envs_final - self.args.max_f_halted_envs_init) * (episode / self.args.total_episodes)
+            
+            t_dict = env.reset()
+            time_step = 0    
+            
+            while t_dict['done'].sum().item()/self.args.num_envs <= max_f_halted_envs:
+                #action logic
+                if time_step < self.args.learning_starts:
+                    #frost start
+                    action = env.action_space.sample()
+                else:
+                    action = π(t_dict['observation'])
+                
+                
+                time_step += 1                
+                
+         
+        

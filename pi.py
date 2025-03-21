@@ -6,21 +6,10 @@ from dataclasses_tensor import dataclass_tensor
 from tensordict import TensorDict, TensorDictBase, tensorclass
 from tensordict.nn import TensorDictModule, TensorDictSequential
 from utils import to_perm_mat_2, GREEN, RESET
-
-MAX_CANDIDATES = 100
-MAX_VOTERS = 1_000
-
-
-@tensorclass
-class problem:
-    X: torch.Tensor # (B, MAX_CANDIDATES)
-    V: torch.Tensor # (B, MAX_VOTERS, MAX_CANDIDATES)
-    costs: torch.Tensor # (B, MAX_CANDIDATES)
-    k: torch.Tensor # (B, 1)
-    embed: torch.Tensor = None # (B, embed_dim)
+from envs import MAX_CANDIDATES, MAX_VOTERS, problem, kendall_tau_distance_from_vectors
 
 class problem_Encoder(nn.Module):
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         """
         x_featr_1: int
             The size of the first feature map(X).
@@ -92,7 +81,7 @@ class problem_Encoder(nn.Module):
         
         self.num_diffs = kwargs['num_diffs']
     
-    def forward(self, X: torch.Tensor, V: torch.Tensor, costs: torch.Tensor, k: torch.Tensor):
+    def forward(self, X: torch.Tensor, V: torch.Tensor, costs: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
         
         batch_size = X.shape[0]
         
@@ -120,12 +109,9 @@ class problem_Encoder(nn.Module):
             
         return o_embed[:, -1, :]
             
-        
-                
-           
 
 class π(nn.Module):
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         '''
         tape_size: int
             the size of the state storing tape
@@ -154,12 +140,12 @@ class π(nn.Module):
             nn.LeakyReLU()
         )
     
-    def reset(self, probs: TensorDict):
+    def reset(self, probs: TensorDictBase) -> None:
         del self.probs
         self.prblm_enc(probs)
         self.probs = probs
         
-    def forward(self, state: torch.Tensor):
+    def forward(self, state: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         prb_embds = self.probs.embed
         
         tmp_embds = torch.cat([prb_embds, state], dim=1)
@@ -171,7 +157,7 @@ class π(nn.Module):
         return w, b
         
 class Qnet(nn.Module):
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         '''
         tape_size: int
             the size of the state storing tape
@@ -200,12 +186,12 @@ class Qnet(nn.Module):
             nn.LeakyReLU()
         )
     
-    def reset(self, probs: TensorDict):
+    def reset(self, probs: TensorDict) -> None:
         del self.probs
         self.prblm_enc(probs)
         self.probs = probs
         
-    def forward(self, state: torch.Tensor, action: torch.Tensor):
+    def forward(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
         prb_embds = self.probs.embed
         
         batch_size = state.shape[0]
@@ -215,7 +201,7 @@ class Qnet(nn.Module):
         
         q_value = self.net(tmp_embds)
         
-        return  q_value   
+        return q_value   
         
 
 if __name__ == "__main__":
