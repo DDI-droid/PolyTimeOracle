@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from dataclasses import dataclass
-from dataclasses_tensor import dataclass_tensor
 from tensordict import TensorDict, TensorDictBase, tensorclass
 from tensordict.nn import TensorDictModule, TensorDictSequential
 from utils import to_perm_mat_2, GREEN, RESET
@@ -60,14 +59,24 @@ class problem_Encoder(nn.Module):
         
         self.costs_encdr = nn.Sequential(
             nn.Linear(MAX_CANDIDATES, 128),
-            nn.LeakyReLU(),
+            nn.ReLU(),
             nn.Linear(128, kwargs['f_featr']),
             nn.LeakyReLU()
         )
         
         self.k_encdr = nn.Sequential(
             nn.Linear(1, kwargs['f_featr']),
-            nn.LeakyReLU(),
+            nn.ReLU(),
+        )
+        
+        self.n_candidates_encdr = nn.Sequential(
+            nn.Linear(1, kwargs['f_featr']),
+            nn.ReLU()
+        )
+        
+        self.n_voters_encdr = nn.Sequential(
+            nn.Linear(1, kwargs['f_featr']),
+            nn.ReLU()
         )
         
         self.mhsa = nn.MultiheadAttention(embed_dim=kwargs['f_featr'], num_heads=kwargs['num_heads'], dropout=kwargs['dropout'], add_bias_kv=True, add_zero_attn=True, kdim=None, vdim=None, batch_first=True)
@@ -81,21 +90,23 @@ class problem_Encoder(nn.Module):
         
         self.num_diffs = kwargs['num_diffs']
     
-    def forward(self, X: torch.Tensor, V: torch.Tensor, costs: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
+    def forward(self, X: torch.Tensor, V: torch.Tensor, costs: torch.Tensor, k: torch.Tensor, n_candidates: torch.Tensor, n_voters: torch.Tensor) -> torch.Tensor:
         
         batch_size = X.shape[0]
         
-        x = to_perm_mat_2(X)
-        v = to_perm_mat_2(V)
+        X = to_perm_mat_2(X)
+        V = to_perm_mat_2(V)
         
-        x = x.unsqueeze(1)
+        X = X.unsqueeze(1)
 
-        x = self.x_encdr(x)
-        v = self.v_encdr(v)
+        X = self.x_encdr(X)
+        V = self.v_encdr(V)
         costs = self.costs_encdr(costs)
         k = self.k_encdr(k)
+        n_candidates = self.n_candidates_encdr(n_candidates)
+        n_voters = self.n_voters_encdr(n_voters)
         
-        embed = torch.cat([x, v, costs, k], dim=0).view(batch_size, 4, -1)
+        embed = torch.cat([X, V, costs, k, n_candidates, n_voters], dim=0).view(batch_size, 6, -1)
         
         o_embed = embed.detach().clone()
         for _ in range(self.num_diffs):
@@ -123,7 +134,7 @@ class π(nn.Module):
         super().__init__()
         
         self.prblm_enc = TensorDictModule(problem_Encoder(x_featr_1=128, v_featr_1=128, cost_featr=128, f_featr=kwargs['prb_embed_dim'], num_heads=4, dropout=0.1, num_diffs=32), 
-                                in_keys=['X', 'V', 'costs', 'k'], out_keys=['embed'])
+                                in_keys=['X', 'V', 'costs', 'k', 'n_candidates', 'n_voters'], out_keys=['embed'])
         
         self.probs = None
         
@@ -169,7 +180,7 @@ class Qnet(nn.Module):
         super().__init__()
         
         self.prblm_enc = TensorDictModule(problem_Encoder(x_featr_1=128, v_featr_1=128, cost_featr=128, f_featr=kwargs['prb_embed_dim'], num_heads=4, dropout=0.1, num_diffs=32), 
-                                in_keys=['X', 'V', 'costs', 'k'], out_keys=['embed'])
+                                in_keys=['X', 'V', 'costs', 'k', 'n_candidates', 'n_voters'], out_keys=['embed'])
         
         self.probs = None
         
