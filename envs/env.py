@@ -19,8 +19,9 @@ from torchrl.envs import (
 )
 from torchrl.envs.transforms.transforms import _apply_to_composite
 from torchrl.envs.utils import check_env_specs, step_mdp
+from torch.linalg import vecdot
 
-from utils import GREEN, RESET
+from utils import GREEN, RED, YELLOW, BLUE, RESET
 
 import random
 
@@ -56,30 +57,32 @@ def kendall_tau_distance_from_vectors(p1: torch.Tensor, p2: torch.Tensor, exclud
     
     rank1 = onehot_p1.float().argmax(dim=2)
     rank2 = onehot_p2.float().argmax(dim=1)
-    
+     
     candidate_valid = (onehot_p2.sum(dim=1) > 0)
     candidate_excluded = (onehot_p2 * exclude.unsqueeze(-1)).sum(dim=1) > 0
     valid_candidate = candidate_valid & ~candidate_excluded
     
-    idx = torch.arange(N, device=p1.device)
-    e, f = torch.meshgrid(idx, idx, indexing='ij')
-    pair_mask = (e < f).unsqueeze(0).expand(B, -1, -1)
-    valid_pairs = (valid_candidate.unsqueeze(1) & valid_candidate.unsqueeze(2)) & pair_mask
+    valid_pairs = (valid_candidate.unsqueeze(1) & valid_candidate.unsqueeze(2))
     
     valid_ranking = (p1 != 0).any(dim=2).float()  # (B, V)
     
-    r1_e = rank1.unsqueeze(3).expand(B, V, N, N)
-    r1_f = rank1.unsqueeze(2).expand(B, V, N, N)
-    r2_e = rank2.unsqueeze(2).expand(B, N, N)
-    r2_f = rank2.unsqueeze(1).expand(B, N, N)
+    t_rank_v_1 = rank1.unsqueeze(-2).expand(-1, -1, p1.shape[-1], -1)
+    t_rank_v_2 = rank1.unsqueeze(-1).expand(-1, -1, -1, p1.shape[-1])
     
-    discordant = ((r1_e < r1_f) & (r2_e > r2_f)) | ((r1_e > r1_f) & (r2_e < r2_f))
-    valid_ranking = valid_ranking.unsqueeze(2).unsqueeze(3)
-    discordant = discordant * valid_ranking
-    discordant_sum = discordant.sum(dim=1)
-    kendall_tau_dist = (discordant_sum * valid_pairs).sum(dim=(1, 2))
+    t_map_v = (t_rank_v_2 < t_rank_v_1)
     
-    return kendall_tau_dist
+    t_rank_x_1 = rank2.unsqueeze(-2).expand(-1, p1.shape[-1], -1)
+    t_rank_x_2 = rank2.unsqueeze(-1).expand(-1, -1, p1.shape[-1])
+
+    t_map_x = (t_rank_x_2 < t_rank_x_1)
+    
+    t_map = torch.logical_xor(t_map_v, t_map_x.unsqueeze(1)) & valid_pairs.unsqueeze(1)
+    
+    kendall_tau_dist = t_map.long().sum(dim=(2, 3)) // 2
+    
+    kendall_tau_dist = (kendall_tau_dist * valid_ranking).sum(1)
+    
+    return kendall_tau_dist.long()
 
 
 class PolyTimeOracle(EnvBase):
@@ -172,21 +175,22 @@ class PolyTimeOracle(EnvBase):
         
         self.halted_envs = self.halted_envs | (halt_flag > self.epsilon).to(self.device)
 
+        # envs specific implementation [Candidate Deletion problem]
+        self.halted_kd = self.halted_kd | (self.halted_envs & (kd > self.problem['k'])).to(self.device)
+
         candidate_flags = self.state[..., -MAX_CANDIDATES-1:-1]
 
         c_flags = torch.where(candidate_flags > self.epsilon, torch.ones_like(candidate_flags), torch.zeros_like(candidate_flags))
         
-        kd = kendall_tau_distance_from_vectors(self.problem["V"], self.problem["X"], c_flags)
+        kd = kendall_tau_distance_from_vectors(self.problem['V'], self.problem['X'], c_flags)
 
-        cst = c_flags @ self.problem["costs"]
-                
-        self.halted_kd = self.halted_kd | (self.halted_envs & (kd > self.problem["k"])).to(self.device)
-        
+        cst = vecdot(c_flags, self.problem['costs'])
+                        
         r = torch.where(self.halted_kd, -torch.ones(self.batch_size), torch.zeros(self.batch_size)).to(self.device)
         
         r = torch.where(self.halted_envs & ~self.halted_kd, (2/(1 + torch.exp(-cst)) - 1).to(self.device), r)
         
-        r = torch.where(~self.halted_envs, (2/(1 + torch.exp(self.r_alpha * (torch.where(kd > self.problem["k"]), kd, torch.zeros_like(kd)) + self.r_beta * cst + self.r_gamma * torch.ones(self.batch_size))) - 1).to(self.device), r)
+        r = torch.where(~self.halted_envs, (2/(1 + torch.exp(self.r_alpha * (torch.where(kd > self.problem['k']), kd, torch.zeros_like(kd)) + self.r_beta * cst + self.r_gamma * torch.ones(self.batch_size))) - 1).to(self.device), r)
         
         return TensorDict(
             observation=self.state,
@@ -209,6 +213,7 @@ class PolyTimeOracle(EnvBase):
     def _render(self, mode: str = "manim") -> None:
         pass
         
+    #env specific implementation
     def generate_problems(self) -> TensorDict:
         B = self.batch_size[0]
 
@@ -258,12 +263,12 @@ class PolyTimeOracle(EnvBase):
         k = (torch.rand(B, device=self.device) * ((torch.square(n_candidates) - n_candidates).float()/K_DIVIDER)).floor().unsqueeze(1).long() + 1
 
         td = TensorDict({
-            "X": X,                # (B, MAX_CANDIDATES): each row is a permutation of [1,..., n_candidates] with zeros after.
-            "V": V,                # (B, MAX_VOTERS, MAX_CANDIDATES): each voter's ranking.
-            "costs": costs,        # (B, MAX_CANDIDATES)
-            "k": k,                # (B, 1)
-            "n_candidates": n_candidates.unsqueeze(-1),  # (B, 1)
-            "n_voters": n_voters.unsqueeze(-1),          # (B, 1)
+            'X': X,                # (B, MAX_CANDIDATES): each row is a permutation of [1,..., n_candidates] with zeros after.
+            'V': V,                # (B, MAX_VOTERS, MAX_CANDIDATES): each voter's ranking.
+            'costs': costs,        # (B, MAX_CANDIDATES)
+            'k': k,                # (B, 1)
+            'n_candidates': n_candidates.unsqueeze(-1),  # (B, 1)
+            'n_voters': n_voters.unsqueeze(-1),          # (B, 1)
         }, 
         batch_size=(B,),
         device=self.device)
