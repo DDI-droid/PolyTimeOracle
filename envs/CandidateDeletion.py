@@ -230,7 +230,7 @@ class PolyTimeOracle(EnvBase):
         
         # cst = vecdot(c_flags, self.problem['costs'].float())
         # optimized cst computation
-        cst = torch.zeros_like(self.cst)
+        cst = torch.zeros_like(self.cst).to(self.device)
         cst[neg_halted_envs] = vecdot(c_flags[neg_halted_envs], self.problem['costs'].float()[neg_halted_envs])
         cst[self.halted_envs] = self.cst[self.halted_envs]
         
@@ -267,8 +267,8 @@ class PolyTimeOracle(EnvBase):
             (
                 2 / (
                     1 + torch.exp(
-                        self.args.r_alpha * (torch.where(self.ktd > self.problem['k'].squeeze(-1), self.ktd, torch.zeros_like(self.ktd))) 
-                        + self.args.r_beta * self.cst + self.args.r_gamma * torch.ones(self.batch_size)
+                        self.args.r_alpha * torch.where(self.ktd > self.problem['k'].squeeze(-1), self.ktd, torch.zeros_like(self.ktd).to(self.device))
+                        + self.args.r_beta * self.cst + self.args.r_gamma * torch.ones(self.batch_size).to(self.device)
                     )
                 ) - 1
             ).to(self.device),
