@@ -70,10 +70,10 @@ class problem:
     embed: torch.Tensor = None # (B, embed_dim)
 
 
-def kendall_tau_distance_from_vectors(p1: torch.Tensor, p2: torch.Tensor, exclude: torch.Tensor) -> torch.Tensor:
+def kendall_tau_distance_from_vectors(p1: torch.Tensor, p2: torch.Tensor, exclude: torch.Tensor, device: torch.device) -> torch.Tensor:
     B, V, N = p1.shape
-    onehot_p1 = F.one_hot(p1.long(), num_classes=N+1)[..., 1:]
-    onehot_p2 = F.one_hot(p2.long(), num_classes=N+1)[..., 1:]
+    onehot_p1 = F.one_hot(p1.long(), num_classes=N+1)[..., 1:].to(device)
+    onehot_p2 = F.one_hot(p2.long(), num_classes=N+1)[..., 1:].to(device)
     
     rank1 = onehot_p1.argmax(dim=2)
     rank2 = onehot_p2.argmax(dim=1)
@@ -181,7 +181,7 @@ class PolyTimeOracle(EnvBase):
         #problem generation
         self.problem = self.generate_problems()
         
-        self.ktd = kendall_tau_distance_from_vectors(self.problem['V'], self.problem['X'], torch.zeros(self.batch_size[0], self.args.MAX_CANDIDATES))
+        self.ktd = kendall_tau_distance_from_vectors(self.problem['V'], self.problem['X'], torch.zeros(self.batch_size[0], self.args.MAX_CANDIDATES), self.device)
 
         
         return TensorDict(
@@ -226,7 +226,7 @@ class PolyTimeOracle(EnvBase):
         # envs specific implementation [Candidate Deletion problem]       
         candidate_flags = self.state[..., -self.args.MAX_CANDIDATES-1:-1]
 
-        c_flags = torch.where(candidate_flags > self.args.epsilon, torch.ones_like(candidate_flags), torch.zeros_like(candidate_flags))
+        c_flags = torch.where(candidate_flags > self.args.epsilon, torch.ones_like(candidate_flags), torch.zeros_like(candidate_flags)).to(self.device)
         
         # cst = vecdot(c_flags, self.problem['costs'].float())
         # optimized cst computation
@@ -243,7 +243,7 @@ class PolyTimeOracle(EnvBase):
         # ktd = kendall_tau_distance_from_vectors(self.problem['V'], self.problem['X'], c_flags)
         # optimized ktd computation
         ktd = torch.zeros_like(self.ktd)
-        ktd[neg_halted_envs] = kendall_tau_distance_from_vectors(self.problem['V'][neg_halted_envs], self.problem['X'][neg_halted_envs], c_flags[neg_halted_envs])
+        ktd[neg_halted_envs] = kendall_tau_distance_from_vectors(self.problem['V'][neg_halted_envs], self.problem['X'][neg_halted_envs], c_flags[neg_halted_envs], self.device)
         ktd[self.halted_envs] = self.ktd[self.halted_envs]
         
         self.ktd = ktd

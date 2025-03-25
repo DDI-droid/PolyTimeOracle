@@ -1,7 +1,4 @@
-numpy==2.2.4
-PyYAML==6.0.2
 PyYAML==6.0.2
 tensordict==0.7.2
-torch==2.6.0
 torchrl==0.7.2
 wandb==0.19.8
