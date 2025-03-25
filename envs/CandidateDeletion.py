@@ -181,7 +181,7 @@ class PolyTimeOracle(EnvBase):
         #problem generation
         self.problem = self.generate_problems()
         
-        self.ktd = kendall_tau_distance_from_vectors(self.problem['V'], self.problem['X'], torch.zeros(self.batch_size[0], self.args.MAX_CANDIDATES), self.device)
+        self.ktd = kendall_tau_distance_from_vectors(self.problem['V'], self.problem['X'], torch.zeros(self.batch_size[0], self.args.MAX_CANDIDATES).to(self.device), self.device)
 
         
         return TensorDict(
