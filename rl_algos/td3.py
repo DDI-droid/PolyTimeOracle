@@ -8,10 +8,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import tyro
+# import tyro
 import wandb
 from torchrl.envs import EnvBase
 from torchrl.data import TensorDictReplayBuffer, LazyTensorStorage, PrioritizedSampler
+
+from utils import load_yaml_config
+
+
+CONFIG_FILE = os.path.join(os.getcwd(), "rl_algos/config", "config.yaml")
 
 @dataclass
 class Args:
@@ -57,14 +62,11 @@ class Args:
     """maximum initial fraction of halted environments"""
     max_f_halted_envs_final: float = 0.3
     """maximum final fraction of halted environments"""
-    
-    
-    
-    
-    
+
+
 class TD3:
     def __init__(self) -> None:
-        self.args = tyro.cli(Args)
+        self.args = Args(**load_yaml_config(CONFIG_FILE))
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
@@ -76,22 +78,22 @@ class TD3:
                 project=self.args.wandb_project_name,
                 entity=self.args.wandb_entity,
                 sync_tensorboard=False,
-                config=vars(args),
+                config=vars(self.args),
                 name=run_name,
                 save_code=False,
             )
         
-        random.seed(args.seed)
-        np.random.seed(args.seed)
-        torch.manual_seed(args.seed)
-        torch.backends.cudnn.deterministic = args.torch_deterministic
+        random.seed(self.args.seed)
+        np.random.seed(self.args.seed)
+        torch.manual_seed(self.args.seed)
+        torch.backends.cudnn.deterministic = self.args.torch_deterministic
         
         π_t.load_state_dict(π.state_dict())
         qf1_t.load_state_dict(qf1.state_dict())
         qf2.load_state_dict(qf2.state_dict())
         
         q_opt = optim.Adam(list(qf1.parameters()) + list(qf2.parameters()), lr=self.args.α)
-        π_opt = optim.Adam(list(actor.parameters()), lr=self.args.α)
+        π_opt = optim.Adam(list(π.parameters()), lr=self.args.α)
         
         rb = TensorDictReplayBuffer(
             priority_key="priority",

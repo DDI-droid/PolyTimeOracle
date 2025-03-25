@@ -3,15 +3,16 @@ from tensordict.nn import TensorDictModule
 from tensordict import TensorDict, TensorDictBase
 
 from envs import PolyTimeOracle, kendall_tau_distance_from_vectors
-from pi import Qnet, π
-from utils import to_perm_mat_2
+from policy import Qnet, π
+from utils import to_perm_mat_2, GREEN, RED, RESET
 
 if __name__ == "__main__":
-    pass
-    # pt = PolyTimeOracle(tape_size=1024, batch_size=(32, ))
-    # t_dct = pt.reset()    
+    pt = PolyTimeOracle(batch_size=(32, ))
+    t_dct = pt.reset()    
     
-    # pt.step(pt.action_spec.sample())
+    print(GREEN, t_dct, RESET)
+    print(RED, pt.step(pt.action_spec.sample()), RESET)
+    
     # π_ = π(tape_size=pt.tape_size, prb_embed_dim=512, h_dim_1=2048, h_dim_2=1024)
     # π_.reset(t_dct['problem'])
 

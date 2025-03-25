@@ -1,1 +1,1 @@
-from .utils import to_perm_mat_1, to_perm_mat_2, RED, GREEN, YELLOW, BLUE, RESET
+from .utils import to_perm_mat_1, to_perm_mat_2, RED, GREEN, YELLOW, BLUE, RESET, load_yaml_config

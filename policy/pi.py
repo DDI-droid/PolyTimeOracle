@@ -1,11 +1,35 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from dataclasses import dataclass
 from tensordict import TensorDict, TensorDictBase, tensorclass
 from tensordict.nn import TensorDictModule, TensorDictSequential
-from utils import to_perm_mat_2, GREEN, RESET
-from envs import MAX_CANDIDATES, MAX_VOTERS, problem, kendall_tau_distance_from_vectors
+
+from utils import to_perm_mat_2, GREEN, RESET, load_yaml_config
+from envs import problem, kendall_tau_distance_from_vectors
+
+CONFIG_FILE = os.path.join(os.getcwd(), "policy/config", "config.yaml")
+
+@dataclass
+class Args:
+    prb_enc_x_featr_1: int = 128
+    prb_enc_v_featr_1: int = 128
+    prb_enc_cost_fetr: int = 128
+    
+    problem_embed_dim: int = 512
+    
+    num_heads: int = 16
+    dropout: int = 0.1
+    num_diffs: int = 32
+    
+    pi_h_dim1: int = 2048
+    pi_h_dim2: int = 1024
+    
+    qnet_h_dim1: int = 2048
+    qnet_h_dim2: int = 1024
+    
+
 
 class problem_Encoder(nn.Module):
     def __init__(self, **kwargs) -> None:
@@ -24,6 +48,8 @@ class problem_Encoder(nn.Module):
             duh
         num_diffs: int
             num of loops
+        MAX_CANDIDATES: int
+        MAX_VOTERS: int
         """
         super().__init__()
         
@@ -43,7 +69,7 @@ class problem_Encoder(nn.Module):
         )
         
         self.v_encdr = nn.Sequential(
-            nn.Conv2d(MAX_VOTERS, 128, kernel_size=(3, 3), padding=1),
+            nn.Conv2d(kwargs['max_voters'], 128, kernel_size=(3, 3), padding=1),
             nn.ReLU(),
             nn.Conv2d(128, 256, kernel_size=(3, 3), padding=1),
             nn.ReLU(),
@@ -58,7 +84,7 @@ class problem_Encoder(nn.Module):
         )
         
         self.costs_encdr = nn.Sequential(
-            nn.Linear(MAX_CANDIDATES, 128),
+            nn.Linear(kwargs['max_candidates'], 128),
             nn.ReLU(),
             nn.Linear(128, kwargs['f_featr']),
             nn.LeakyReLU()
@@ -126,28 +152,31 @@ class π(nn.Module):
         '''
         tape_size: int
             the size of the state storing tape
-        prb_embed_dim: int
-            the size of the problem embedding [-1]
-        h_dim_1: int
-        h_dim_2: int
+        MAX_CANDIDATES: int
+        MAX_VOTERS
         '''
         super().__init__()
         
-        self.prblm_enc = TensorDictModule(problem_Encoder(x_featr_1=128, v_featr_1=128, cost_featr=128, f_featr=kwargs['prb_embed_dim'], num_heads=4, dropout=0.1, num_diffs=32), 
-                                in_keys=['X', 'V', 'costs', 'k', 'n_candidates', 'n_voters'], out_keys=['embed'])
+        self.args = Args(**load_yaml_config(CONFIG_FILE))
+        
+        self.prblm_enc = TensorDictModule(problem_Encoder(x_featr_1=self.args.prb_enc_x_featr_1, v_featr_1=self.args.prb_enc_v_featr_1,\
+            cost_featr=self.args.prb_enc_cost_fetr, f_featr=self.args.problem_embed_dim,\
+            num_heads=self.args.num_heads, dropout=self.args.dropout, num_diffs=self.args.num_diffs,\
+            max_candidates=kwargs['max_candidates'], max_voters=kwargs['max_voters']), \
+            in_keys=['X', 'V', 'costs', 'k', 'n_candidates', 'n_voters'], out_keys=['embed'])
         
         self.probs = None
         
         self.tape_size = kwargs['tape_size']
         
-        self.prb_embed_dim = kwargs['prb_embed_dim']
+        self.prb_embed_dim = self.args.problem_embed_dim
         
         self.net = nn.Sequential(
-            nn.Linear(self.prb_embed_dim + self.tape_size, kwargs['h_dim_1']),
+            nn.Linear(self.prb_embed_dim + self.tape_size, self.args.pi_h_dim1),
             nn.LeakyReLU(),
-            nn.Linear(kwargs['h_dim_1'], kwargs['h_dim_2']),
+            nn.Linear(self.args.pi_h_dim1, self.args.pi_h_dim2),
             nn.ReLU(),
-            nn.Linear(kwargs['h_dim_2'], self.tape_size*self.tape_size + self.tape_size),
+            nn.Linear(self.args.pi_h_dim2, self.tape_size*self.tape_size + self.tape_size),
             nn.LeakyReLU()
         )
     
@@ -172,28 +201,26 @@ class Qnet(nn.Module):
         '''
         tape_size: int
             the size of the state storing tape
-        prb_embed_dim: int
-            the size of the problem embedding [-1]
-        h_dim_1: int
-        h_dim_2: int
+        problem_encoder: nn.Module
         '''
         super().__init__()
         
-        self.prblm_enc = TensorDictModule(problem_Encoder(x_featr_1=128, v_featr_1=128, cost_featr=128, f_featr=kwargs['prb_embed_dim'], num_heads=4, dropout=0.1, num_diffs=32), 
-                                in_keys=['X', 'V', 'costs', 'k', 'n_candidates', 'n_voters'], out_keys=['embed'])
+        self.prblm_enc = kwargs['problem_encoder']
         
         self.probs = None
         
+        self.args = Args(**load_yaml_config(CONFIG_FILE))
+        
         self.tape_size = kwargs['tape_size']
         
-        self.prb_embed_dim = kwargs['prb_embed_dim']
+        self.prb_embed_dim = self.args.problem_embed_dim
         
         self.net = nn.Sequential(
-            nn.Linear(self.prb_embed_dim + 2 * self.tape_size + self.tape_size*self.tape_size, kwargs['h_dim_1']),
+            nn.Linear(self.prb_embed_dim + 2 * self.tape_size + self.tape_size*self.tape_size, self.args.qnet_h_dim1),
             nn.LeakyReLU(),
-            nn.Linear(kwargs['h_dim_1'], kwargs['h_dim_2']),
+            nn.Linear(self.args.qnet_h_dim1, self.args.qnet_h_dim2),
             nn.ReLU(),
-            nn.Linear(kwargs['h_dim_2'], 1),
+            nn.Linear(self.args.qnet_h_dim2, 1),
             nn.LeakyReLU()
         )
     
@@ -216,15 +243,4 @@ class Qnet(nn.Module):
         
 
 if __name__ == "__main__":
-    probs = problem(
-        X=torch.zeros(32, MAX_CANDIDATES),
-        V=torch.zeros(32, MAX_VOTERS, MAX_CANDIDATES),
-        costs=torch.zeros(32, MAX_CANDIDATES),
-        k=torch.zeros(32, 1)
-    )
-        
-    π_ = π(tape_size=1024, prb_embed_dim=512, h_dim_1=2048, h_dim_2=1024)
-    
-    π_.reset(probs)
-    
-    π_(torch.zeros(32, 1024))
+    pass

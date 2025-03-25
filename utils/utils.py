@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import yaml
 
 RED = "\033[91m"
 GREEN = "\033[92m"
@@ -75,6 +76,16 @@ def to_perm_mat_2(rankings: torch.Tensor, pad_value: int = -1) -> torch.Tensor:
     
     perm_matrices = eye_extended[rankings_fixed]
     return perm_matrices
+
+def load_yaml_config(file_path: str) -> dict:
+    """Load configuration from a YAML file."""
+    try:
+        with open(file_path, "r") as f:
+            config_data = yaml.safe_load(f) or {}
+            return config_data
+    except FileNotFoundError:
+        print(f"Warning: {file_path} not found. Using default configuration.")
+        return {}
 
 if __name__ == "__main__":
     ranks = torch.tensor([[[0, 1, 2], [1, 0, -1]], [[0, 1, 2], [0, -1, -1]]])

@@ -1,0 +1,22 @@
+env_name: CandidateDeletion
+seed: 1
+torch_deterministic: True    
+cuda: True    
+
+MIN_CANDIDATES: 5
+MAX_CANDIDATES: 10
+MIN_VOTERS: 7
+MAX_VOTERS: 100
+MIN_COSTS: 10
+MAX_COSTS: 50
+
+SEQS_PADDING: 0
+COSTS_PADDING: 0
+K_DIVIDER: 3.7
+V_PADDING: 0
+    
+epsilon: 1.0e-3
+    
+r_alpha: 0.6
+r_beta: 0.4
+r_gamma: 1.0

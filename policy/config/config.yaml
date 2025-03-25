@@ -1,0 +1,15 @@
+prb_enc_x_featr_1: 128
+prb_enc_v_featr_1: 128
+prb_enc_cost_fetr: 128
+    
+problem_embed_dim: 512
+    
+num_heads: 16
+dropout: 0.1
+num_diffs: 32
+    
+pi_h_dim1: 2048
+pi_h_dim2: 1024
+    
+qnet_h_dim1: 2048
+qnet_h_dim2: 1024
