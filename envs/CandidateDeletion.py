@@ -256,7 +256,7 @@ class PolyTimeOracle(EnvBase):
         #TODO optimize for halted_envs
         self.halted_kd = self.halted_kd | (self.halted_envs & (self.ktd > self.problem['k'].squeeze(-1))).to(self.device)
                 
-        r = torch.where(self.halted_kd, -torch.ones(self.batch_size), torch.zeros(self.batch_size)).to(self.device)
+        r = torch.where(self.halted_kd, -torch.ones(self.batch_size).to(self.device), torch.zeros(self.batch_size).to(self.device))
         
         #TODO optimize for halted_envs
         r = torch.where(self.halted_envs & ~self.halted_kd, ((2/torch.exp(self.cst)) - 1).to(self.device), r)
