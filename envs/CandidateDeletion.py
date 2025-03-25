@@ -206,9 +206,8 @@ class PolyTimeOracle(EnvBase):
         new_state[neg_halted_envs] = torch.bmm(w_prime, prev_state_prime).squeeze_(-1) + b_prime
               
         prev_state.squeeze_(-1)
-        prev_state_pos = prev_state[self.halted_envs]
         
-        new_state[self.halted_envs] = prev_state_pos
+        new_state[self.halted_envs] = prev_state[self.halted_envs]
                 
         self.state = new_state
         # del prev_state
@@ -216,7 +215,7 @@ class PolyTimeOracle(EnvBase):
         # del w_prime
         # del prev_state_prime
         # del b_prime
-        # del prev_state_pos
+        # del prev_state[self.halted_envs]
         
         
         halt_flag = self.state[..., -1]
