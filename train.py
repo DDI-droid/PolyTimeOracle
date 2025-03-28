@@ -10,21 +10,21 @@ if __name__ == "__main__":
     pt = PolyTimeOracle(batch_size=(32, ))
     t_dct = pt.reset()    
     
-    print(GREEN, t_dct, RESET)
-    print(RED, pt.step(pt.action_spec.sample()), RESET)
+    # print(GREEN, t_dct, RESET)
+    # print(RED, pt.step(pt.action_spec.sample()), RESET)
     
-    # π_ = π(tape_size=pt.tape_size, prb_embed_dim=512, h_dim_1=2048, h_dim_2=1024)
-    # π_.reset(t_dct['problem'])
+    π_ = π(tape_size=pt.args.tape_size, max_candidates=pt.args.MAX_CANDIDATES, max_voters=pt.args.MAX_VOTERS)
+    π_.reset(t_dct['problem'])
 
-    # w, b = π_(t_dct['observation'])
+    w, b = π_(t_dct['observation'])
     
-    # action = TensorDict(
-    #     w=w,
-    #     b=b,
-    #     batch_size=w.shape[0]
-    # )
+    action = TensorDict(
+        w=w,
+        b=b,
+        batch_size=w.shape[0]
+    )
     
-    #t_dct = pt.step(action)
+    t_dct = pt.step(action)
     
     
     # ranks = torch.tensor([[[0, 0, 0, 0], [2, 3, 1, 4]], [[1, 2, 3, 0], [2, 3, 1, 0]]])

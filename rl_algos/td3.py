@@ -38,8 +38,8 @@ class Args:
     total_episodes: int = 10_000
     """total timesteps of the experiments"""
     α: float = 3e-4
-    num_envs: int = None
-    """the number of parallel game environments"""
+    # num_envs: int = None
+    # """the number of parallel game environments"""
     
     buffer_size: int = int(1e6)
     γ: float = 0.99
@@ -112,13 +112,19 @@ class TD3:
             t_dict = env.reset()
             time_step = 0    
             
-            while t_dict['done'].sum().item()/self.args.num_envs <= max_f_halted_envs:
+            while t_dict['done'].sum().item()/env.batch_size[0] <= max_f_halted_envs:
                 #action logic
+                action = None
                 if time_step < self.args.learning_starts:
                     #frost start
-                    action = env.action_space.sample()
+                    action = env.action_spec.sample()
                 else:
-                    action = π(t_dict['observation'])
+                    with torch.no_grad():
+                        action = π(t_dict['observation'])
+                        action = action + torch.randn_like(action) * self.args.exploration_noise
+                
+                t_dict = env.step(action)
+                
                 
                 
                 time_step += 1                
